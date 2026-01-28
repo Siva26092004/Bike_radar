@@ -16,6 +16,7 @@ class MainWindow(QWidget):
 
         self._build_ui()
         self.backend.grid_ready.connect(self.update_grid)
+        self.backend.radar_points_ready.connect(self.update_radar_points)
 
     # -------------------------------------------------
     # UI BUILD (SPLIT SCREEN)
@@ -87,8 +88,16 @@ class MainWindow(QWidget):
         self.image = pg.ImageItem()
         self.plot.addItem(self.image)
 
-        self.plot.setLabel("bottom", "Angle (deg)")
-        self.plot.setLabel("left", "Range (m)")
+        # Scatter plot for radar points
+        self.scatter = pg.ScatterPlotItem(
+            size=10,
+            pen=pg.mkPen(None),
+            brush=pg.mkBrush(255, 0, 0, 200)  # Red with alpha
+        )
+        self.plot.addItem(self.scatter)
+
+        self.plot.setLabel("bottom", "X Position (m)")
+        self.plot.setLabel("left", "Y Position (m)")
 
         self.plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         root.addWidget(self.plot, stretch=1)
@@ -161,3 +170,21 @@ class MainWindow(QWidget):
 
         self.plot.getAxis("bottom").setTicks([x_ticks])
         self.plot.getAxis("left").setTicks([y_ticks])
+    # -------------------------------------------------
+    # UPDATE RADAR POINTS
+    # -------------------------------------------------
+    def update_radar_points(self, points):
+        """Update scatter plot with new radar points."""
+        print(f"points {points}")
+        if not points:
+            self.scatter.setData([], [])
+            return
+
+        # Extract real-world coordinates for plotting
+        x_coords = [p['y'] for p in points]
+        y_coords = [p['x'] for p in points]
+        
+        # Update scatter plot
+        self.scatter.setData(x_coords, y_coords)
+        
+        print(f"Displaying {len(points)} radar points on grid")
