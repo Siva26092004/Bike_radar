@@ -1,10 +1,11 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QRadioButton, QGroupBox,
-    QLabel, QDoubleSpinBox, QSizePolicy
+    QLabel, QDoubleSpinBox, QSizePolicy, QFileDialog
 )
 from PySide6.QtCore import QTimer
 import pyqtgraph as pg
+import pyqtgraph.exporters as pg_exporters
 import numpy as np
 
 
@@ -52,6 +53,12 @@ class MainWindow(QWidget):
         self.create_btn.clicked.connect(self.on_create_grid)
         left_panel.addWidget(self.create_btn)
 
+        # -------- EXPORT PLOT --------
+        self.export_btn = QPushButton("Export Plot")
+        self.export_btn.setFixedHeight(30)
+        self.export_btn.clicked.connect(self.export_plot)
+        left_panel.addWidget(self.export_btn)
+
         # -------- MODE --------
         mode_box = QGroupBox("Mode")
         mode_layout = QVBoxLayout()
@@ -86,17 +93,20 @@ class MainWindow(QWidget):
         self.plot = pg.PlotWidget()
         self.plot.setBackground('k')
         self.plot.showGrid(x=True, y=True, alpha=0.25)
-
-        # Fixed axis behavior
         self.plot.enableAutoRange(False, False)
         self.plot.setMouseEnabled(False, False)
-
         self.plot.getPlotItem().layout.setContentsMargins(0, 0, 0, 0)
 
         self.image = pg.ImageItem()
         self.plot.addItem(self.image)
 
-        # Highlight rectangle (selected bin)
+        # -------- OCCUPANCY LUT (0=RED, 1=GREEN) --------
+        self.occ_lut = np.array([
+            [255,   0,   0, 255],   # 0 → red
+            [  0, 255,   0, 255],   # 1 → green
+        ], dtype=np.uint8)
+
+        # Highlight rectangle
         self.highlight = pg.RectROI(
             [0, 0], [1, 1],
             pen=pg.mkPen('r', width=2)
@@ -114,12 +124,9 @@ class MainWindow(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.auto_step)
 
-        # Connections
         self.auto_btn.toggled.connect(self.on_mode_change)
         self.plot.scene().sigMouseClicked.connect(self.on_plot_click)
 
-    # -------------------------------------------------
-    # DOUBLE SPIN HELPER
     # -------------------------------------------------
     def _dspin(self, label, layout, default):
         row = QHBoxLayout()
@@ -136,8 +143,6 @@ class MainWindow(QWidget):
         return spin
 
     # -------------------------------------------------
-    # CREATE GRID
-    # -------------------------------------------------
     def on_create_grid(self):
         cfg = {
             "x_min": self.xmin.value(),
@@ -150,7 +155,7 @@ class MainWindow(QWidget):
         self.backend.create_grid(cfg)
 
     # -------------------------------------------------
-    # GRID READY
+    # GRID UPDATE (REAL-TIME OCCUPANCY COLORS)
     # -------------------------------------------------
     def update_grid(self, grid):
         self.grid = grid
@@ -160,16 +165,19 @@ class MainWindow(QWidget):
         y_min, y_max = self.ymin.value(), self.ymax.value()
         dx, dy = self.dx.value(), self.dy.value()
 
-        # -------- IMPORTANT FIX --------
-        # Remove old image item completely
+        # Reset image to force reshape
         self.plot.removeItem(self.image)
-
-        # Create a NEW ImageItem (forces reshape)
         self.image = pg.ImageItem()
         self.plot.addItem(self.image)
 
-        # Set new image
-        self.image.setImage(grid.T, autoLevels=True)
+        # Apply occupancy grid
+        self.image.setImage(
+            grid.T,
+            autoLevels=False,
+            levels=(0, 1)
+        )
+        self.image.setLookupTable(self.occ_lut)
+
         self.image.setRect(
             x_min,
             y_min,
@@ -177,22 +185,17 @@ class MainWindow(QWidget):
             y_max - y_min
         )
 
-        # Lock view
         self.plot.setXRange(x_min, x_max, padding=0)
         self.plot.setYRange(y_min, y_max, padding=0)
 
-        # ---- FIXED AXIS TICKS ----
+        # Axis ticks
         x_ticks = [(v, f"{v:g}") for v in np.arange(x_min, x_max + dx, dx)]
         y_ticks = [(v, f"{v:g}") for v in np.arange(y_min, y_max + dy, dy)]
-
         self.plot.getAxis("bottom").setTicks([x_ticks])
         self.plot.getAxis("left").setTicks([y_ticks])
 
-        # Hide old highlight
         self.highlight.setVisible(False)
 
-    # -------------------------------------------------
-    # MODE CHANGE
     # -------------------------------------------------
     def on_mode_change(self):
         if self.auto_btn.isChecked():
@@ -200,8 +203,6 @@ class MainWindow(QWidget):
         else:
             self.timer.stop()
 
-    # -------------------------------------------------
-    # AUTO STEP (TRAVERSE ALL BINS)
     # -------------------------------------------------
     def auto_step(self):
         if self.grid is None:
@@ -218,8 +219,6 @@ class MainWindow(QWidget):
         self.current_index += 1
 
     # -------------------------------------------------
-    # MANUAL CLICK SELECTION
-    # -------------------------------------------------
     def on_plot_click(self, event):
         if not self.manual_btn.isChecked() or self.grid is None:
             return
@@ -233,8 +232,6 @@ class MainWindow(QWidget):
 
         self.highlight_bin(ix, iy)
 
-    # -------------------------------------------------
-    # HIGHLIGHT BIN
     # -------------------------------------------------
     def highlight_bin(self, ix, iy):
         if self.grid is None:
@@ -250,3 +247,22 @@ class MainWindow(QWidget):
         self.highlight.setPos([x, y])
         self.highlight.setSize([self.dx.value(), self.dy.value()])
         self.highlight.setVisible(True)
+
+    # -------------------------------------------------
+    def export_plot(self):
+        if self.grid is None:
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Plot Image",
+            "bike_radar_grid.png",
+            "PNG Images (*.png);;JPEG Images (*.jpg)"
+        )
+
+        if not file_path:
+            return
+
+        exporter = pg_exporters.ImageExporter(self.plot.getPlotItem())
+        exporter.parameters()['width'] = 1920
+        exporter.export(file_path)
