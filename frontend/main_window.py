@@ -1,9 +1,10 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QRadioButton, QGroupBox,
-    QLabel, QDoubleSpinBox
+    QLabel, QDoubleSpinBox, QSizePolicy
 )
 import pyqtgraph as pg
+import numpy as np
 
 
 class MainWindow(QWidget):
@@ -14,21 +15,22 @@ class MainWindow(QWidget):
         self.setWindowTitle("Bike Radar Grid Setup")
 
         self._build_ui()
-
-        # Backend → frontend
         self.backend.grid_ready.connect(self.update_grid)
 
     # -------------------------------------------------
-    # UI BUILD
+    # UI BUILD (SPLIT SCREEN)
     # -------------------------------------------------
     def _build_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(6)
+        root = QHBoxLayout(self)
+        root.setSpacing(6)
 
-        # ========== MODE ==========
+        # ================= LEFT PANEL =================
+        left_panel = QVBoxLayout()
+        left_panel.setSpacing(8)
+
+        # -------- MODE (INDEPENDENT) --------
         mode_box = QGroupBox("Mode")
         mode_layout = QHBoxLayout()
-        mode_layout.setSpacing(20)
 
         self.auto_btn = QRadioButton("Auto")
         self.manual_btn = QRadioButton("Manual")
@@ -39,42 +41,47 @@ class MainWindow(QWidget):
         mode_layout.addStretch(1)
 
         mode_box.setLayout(mode_layout)
-        main_layout.addWidget(mode_box, stretch=0)
+        left_panel.addWidget(mode_box)
 
-        # ========== GRID PARAMETERS ==========
-        self.param_box = QGroupBox("Grid Parameters (Manual)")
+        # -------- GRID PARAMETERS --------
+        self.param_box = QGroupBox("Grid Parameters")
         param_layout = QVBoxLayout()
-        param_layout.setSpacing(4)
+        param_layout.setSpacing(6)
 
-        self.xmin = self._spin("X Min (deg)", param_layout, -11.0)
-        self.xmax = self._spin("X Max (deg)", param_layout, 11.0)
+        self.xmin = self._spin("X Min(m)", param_layout, -12.0)
+        self.xmax = self._spin("X Max(m)", param_layout, 12.0)
         self.ymin = self._spin("Y Min (m)", param_layout, 0.0)
         self.ymax = self._spin("Y Max (m)", param_layout, 120.0)
-        self.dx   = self._spin("Cell Size X (deg)", param_layout, 1.0)
+        self.dx   = self._spin("Cell Size X (m)", param_layout, 1.0)
         self.dy   = self._spin("Cell Size Y (m)", param_layout, 5.0)
 
         self.param_box.setLayout(param_layout)
-        main_layout.addWidget(self.param_box, stretch=0)
+        left_panel.addWidget(self.param_box)
 
-        self.manual_btn.toggled.connect(self.param_box.setEnabled)
-
-        # ========== CREATE GRID ==========
+        # -------- CREATE GRID --------
         self.create_btn = QPushButton("Create Grid")
-        self.create_btn.setFixedHeight(28)
+        self.create_btn.setFixedHeight(30)
         self.create_btn.clicked.connect(self.on_create_grid)
-        main_layout.addWidget(self.create_btn, stretch=0)
+        left_panel.addWidget(self.create_btn)
 
-        # ========== PLOT ==========
+        left_panel.addStretch(1)
+
+        left_widget = QWidget()
+        left_widget.setLayout(left_panel)
+        left_widget.setFixedWidth(320)
+
+        root.addWidget(left_widget)
+
+        # ================= RIGHT PANEL (PLOT) =================
         self.plot = pg.PlotWidget()
         self.plot.setBackground('k')
         self.plot.setAspectLocked(False)
-        self.plot.showGrid(x=True, y=True, alpha=0.3)
+        self.plot.showGrid(x=True, y=True, alpha=0.25)
 
-        # 🔒 Disable auto scaling & mouse interaction
-        self.plot.enableAutoRange(x=False, y=False)
-        self.plot.setMouseEnabled(x=False, y=False)
+        # Axis behavior controlled ONLY by Create Grid
+        self.plot.enableAutoRange(False, False)
+        self.plot.setMouseEnabled(False, False)
 
-        # Remove margins → bigger plot
         self.plot.getPlotItem().layout.setContentsMargins(0, 0, 0, 0)
 
         self.image = pg.ImageItem()
@@ -83,31 +90,30 @@ class MainWindow(QWidget):
         self.plot.setLabel("bottom", "Angle (deg)")
         self.plot.setLabel("left", "Range (m)")
 
-        main_layout.addWidget(self.plot, stretch=1)
+        self.plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        root.addWidget(self.plot, stretch=1)
 
     # -------------------------------------------------
-    # SPIN BOX HELPER
+    # SPIN BOX
     # -------------------------------------------------
     def _spin(self, label, layout, default):
         row = QHBoxLayout()
-        row.setSpacing(10)
-
         row.addWidget(QLabel(label))
 
         spin = QDoubleSpinBox()
         spin.setDecimals(2)
-        spin.setRange(-1000.0, 1000.0)
+        spin.setRange(-1000, 1000)
         spin.setValue(default)
-        spin.setFixedWidth(120)
+        spin.setFixedWidth(110)
 
         row.addStretch(1)
         row.addWidget(spin)
-
         layout.addLayout(row)
+
         return spin
 
     # -------------------------------------------------
-    # BUTTON HANDLER
+    # CREATE GRID (ALWAYS RESCALE)
     # -------------------------------------------------
     def on_create_grid(self):
         cfg = {
@@ -117,13 +123,13 @@ class MainWindow(QWidget):
             "y_max": self.ymax.value(),
             "dx": self.dx.value(),
             "dy": self.dy.value(),
-            "mode": "manual" if self.manual_btn.isChecked() else "auto"
         }
 
+        # Create grid ALWAYS resets plot
         self.backend.create_grid(cfg)
 
     # -------------------------------------------------
-    # UPDATE PLOT (AXIS LOCKED)
+    # UPDATE GRID + AXES (UNCONDITIONAL)
     # -------------------------------------------------
     def update_grid(self, grid):
         if grid is None or grid.size == 0:
@@ -133,11 +139,11 @@ class MainWindow(QWidget):
         x_max = self.xmax.value()
         y_min = self.ymin.value()
         y_max = self.ymax.value()
+        dx = self.dx.value()
+        dy = self.dy.value()
 
         # Update image
         self.image.setImage(grid.T, autoLevels=True)
-
-        # Map grid → real-world
         self.image.setRect(
             x_min,
             y_min,
@@ -145,6 +151,13 @@ class MainWindow(QWidget):
             y_max - y_min
         )
 
-        # 🔒 FIX AXIS RANGE PERMANENTLY
+        # ALWAYS rescale on Create Grid
         self.plot.setXRange(x_min, x_max, padding=0)
         self.plot.setYRange(y_min, y_max, padding=0)
+
+        # Explicit ticks
+        x_ticks = [(v, f"{v:g}") for v in np.arange(x_min, x_max + dx, dx)]
+        y_ticks = [(v, f"{v:g}") for v in np.arange(y_min, y_max + dy, dy)]
+
+        self.plot.getAxis("bottom").setTicks([x_ticks])
+        self.plot.getAxis("left").setTicks([y_ticks])
