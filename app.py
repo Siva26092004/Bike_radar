@@ -14,6 +14,7 @@ def main():
     window.show()
   
 
+    #hi
     # After window.show()
     CONFIG_PORT = "COM19"  # Replace with your actual config port
     DATA_PORT = "COM20"    # Replace with your actual data port
