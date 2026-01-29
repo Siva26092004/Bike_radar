@@ -21,6 +21,7 @@ class MainWindow(QWidget):
 
         self._build_ui()
         self.backend.grid_ready.connect(self.update_grid)
+        self.backend.radar_points_ready.connect(self.update_radar_points)
 
     # -------------------------------------------------
     # UI BUILD (SPLIT SCREEN)
@@ -100,22 +101,16 @@ class MainWindow(QWidget):
         self.image = pg.ImageItem()
         self.plot.addItem(self.image)
 
-        # -------- OCCUPANCY LUT (0=RED, 1=GREEN) --------
-        self.occ_lut = np.array([
-            [255,   0,   0, 255],   # 0 → red
-            [  0, 255,   0, 255],   # 1 → green
-        ], dtype=np.uint8)
-
-        # Highlight rectangle
-        self.highlight = pg.RectROI(
-            [0, 0], [1, 1],
-            pen=pg.mkPen('r', width=2)
+        # Scatter plot for radar points
+        self.scatter = pg.ScatterPlotItem(
+            size=10,
+            pen=pg.mkPen(None),
+            brush=pg.mkBrush(255, 0, 0, 200)  # Red with alpha
         )
-        self.highlight.setVisible(False)
-        self.plot.addItem(self.highlight)
+        self.plot.addItem(self.scatter)
 
-        self.plot.setLabel("bottom", "Angle (deg)")
-        self.plot.setLabel("left", "Range (m)")
+        self.plot.setLabel("bottom", "X Position (m)")
+        self.plot.setLabel("left", "Y Position (m)")
 
         self.plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         root.addWidget(self.plot, stretch=1)
@@ -266,3 +261,21 @@ class MainWindow(QWidget):
         exporter = pg_exporters.ImageExporter(self.plot.getPlotItem())
         exporter.parameters()['width'] = 1920
         exporter.export(file_path)
+    # -------------------------------------------------
+    # UPDATE RADAR POINTS
+    # -------------------------------------------------
+    def update_radar_points(self, points):
+        """Update scatter plot with new radar points."""
+        print(f"points {points}")
+        if not points:
+            self.scatter.setData([], [])
+            return
+
+        # Extract real-world coordinates for plotting
+        x_coords = [p['y'] for p in points]
+        y_coords = [p['x'] for p in points]
+        
+        # Update scatter plot
+        self.scatter.setData(x_coords, y_coords)
+        
+        print(f"Displaying {len(points)} radar points on grid")+
