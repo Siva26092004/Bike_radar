@@ -13,6 +13,7 @@ def main():
     window.resize(900, 600)
     window.show()
   
+
     #hi
     # After window.show()
     CONFIG_PORT = "COM19"  # Replace with your actual config port
