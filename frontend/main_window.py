@@ -278,4 +278,4 @@ class MainWindow(QWidget):
         # Update scatter plot
         self.scatter.setData(x_coords, y_coords)
         
-        print(f"Displaying {len(points)} radar points on grid")+
+        print(f"Displaying {len(points)} radar points on grid")
