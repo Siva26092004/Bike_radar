@@ -142,19 +142,16 @@ class GridBackend(QObject):
                         continue
                     
                     # Remove data before magic word
-                    if magic_idx < 0:
-                        break
+                    buffer = buffer[magic_idx:]
                     
                     # Check if we have enough for header
                     if len(buffer) < HEADER_LEN:
-                        print(f"prechana ")
-                        time.sleep(0.5)
+                        time.sleep(0.01)
                         continue
                     
                     # Parse header to get frame length
                     try:
                         magic, version, totalPacketLen, *_ = HEADER_STRUCT.unpack(buffer[:HEADER_LEN])
-                        print(f"magic {magic} version {version} totalPacketLen {totalPacketLen} \n")
                         if magic != 0x0708050603040102:  # Verify magic word
                             log.warning("Invalid magic word, skipping byte")
                             buffer = buffer[1:]
@@ -170,9 +167,7 @@ class GridBackend(QObject):
                     
                     # Extract frame
                     frame_bytes = bytes(buffer[:totalPacketLen])
-                    buffer = buffer[totalPacketLen:] 
-                  
-                    #print(f'Single Frame {frame_bytes}')
+                    buffer = buffer[totalPacketLen:]
                     
                     # Parse the frame
                     self.parse_standard_frame(frame_bytes)
@@ -184,28 +179,21 @@ class GridBackend(QObject):
 
     def parse_standard_frame(self, frameData):
         """Parse a complete radar frame."""
-        print(f"Parse called")
         headerStruct = 'Q8I'
         frameHeaderLen = struct.calcsize(headerStruct)
-        total=frameHeaderLen
         tlvHeaderLength = 8
         
         try:
             # Read in frame Header
-            print(f"Header Struct Size {HEADER_LEN}")
-            print(f"frameHeaderLen {frameHeaderLen}")
             magic, version, totalPacketLen, platform, frameNum, timeCPUCycles, numDetectedObj, numTLVs, subFrameNum = struct.unpack(headerStruct, frameData[:frameHeaderLen])
-            print(f" magic {magic} version {version} totalPacketLen {totalPacketLen} platform {platform} frameNum {frameNum} numDetectedObj {numDetectedObj} numTLVs {numTLVs}  subFrameNum {subFrameNum} \n")
         except:
-            print('Error: Could not read frame header')
+            log.error('Error: Could not read frame header')
+            return
         
         offset = frameHeaderLen
         for i in range(numTLVs):
- 
             try:
                 tlvType, tlvLength = self.tlv_header_decode(frameData[offset:offset+tlvHeaderLength])
-                print(f"TlvType {tlvType}")
-                total+=tlvHeaderLength+tlvLength
                 tlvPayload = frameData[offset + tlvHeaderLength : offset+tlvHeaderLength+tlvLength]
                 
                 if tlvType == 1020:
@@ -216,7 +204,6 @@ class GridBackend(QObject):
                     numDetectedTargets, targets = self.parse_track_tlv(tlvPayload, tlvLength)
                     if numDetectedTargets > 0:
                         # Rescale and emit points
-                        print(f"called")
                         self.rescale_and_emit_points(targets)
                 elif tlvType == 1011:
                     # TargetIndexTLV
@@ -293,13 +280,13 @@ class GridBackend(QObject):
             # Rescale to grid dimensions
             # Map x_m from radar range to [x_min, x_max]
             # Map y_m from radar range to [y_min, y_max]
-            x_grid = ((x_m - self.x_min) / (self.x_max - self.x_min)) * self.nx
-            y_grid = ((y_m - self.y_min) / (self.y_max - self.y_min)) * self.ny
-
+            x_grid = ((x_m - self.x_min) / (self.x_max - self.x_min)) * (self.nx - 1)
+            y_grid = ((y_m - self.y_min) / (self.y_max - self.y_min)) * (self.ny - 1)   
             # Clamp to grid bounds
             x_grid = max(0, min(self.nx - 1, x_grid))
             y_grid = max(0, min(self.ny - 1, y_grid))
-            print("Rescaled")
+            print(f"x_m {x_m} y_m {y_m} x_grid {x_grid} y_grid {y_grid} \n")
+            
             rescaled_points.append({
                 'x': x_grid,
                 'y': y_grid,

@@ -212,8 +212,10 @@ class MainWindow(QWidget):
         for p in points:
             ix = int(p['x'])
             iy = int(p['y'])
+            print(f"ix {ix} iy {iy} \n")
             if 0 <= iy < self.grid.shape[0] and 0 <= ix < self.grid.shape[1]:
                 self.grid[iy, ix] = 1
+                print(f"iy {iy} ix {ix} \n")
 
         # Update image only (NO reshape, NO axis change)
         self.image.setImage(
@@ -293,21 +295,3 @@ class MainWindow(QWidget):
         exporter = pg_exporters.ImageExporter(self.plot.getPlotItem())
         exporter.parameters()['width'] = 1920
         exporter.export(file_path)
-    # -------------------------------------------------
-    # UPDATE RADAR POINTS
-    # -------------------------------------------------
-    def update_radar_points(self, points):
-        """Update scatter plot with new radar points."""
-        print(f"points {points}")
-        if not points:
-            self.scatter.setData([], [])
-            return
-
-        # Extract real-world coordinates for plotting
-        x_coords = [p['y'] for p in points]
-        y_coords = [p['x'] for p in points]
-        
-        # Update scatter plot
-        self.scatter.setData(x_coords, y_coords)
-        
-        print(f"Displaying {len(points)} radar points on grid")
